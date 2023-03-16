@@ -13,7 +13,7 @@ if __name__ == '__main__':
               '1% largest throughout(TXs/s)']
     data_set = []
     RBC_instances = 1     # the number of nodes emerged in the consensus
-    batch_size = [50000, 100000, 250000, 500000, 1000000]  # the number of corrupted nodes
+    batch_size = [50000, 100000, 250000, 500000]  # the number of corrupted nodes
     idx = 0
     num_round = 100
     # batch_size = 5000

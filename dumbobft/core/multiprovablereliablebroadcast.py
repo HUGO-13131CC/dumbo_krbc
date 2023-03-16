@@ -10,7 +10,7 @@ from honeybadgerbft.core.reliablebroadcast import merkleTree, getMerkleBranch, m
 from honeybadgerbft.core.reliablebroadcast import encode, decode
 import hashlib, pickle
 
-NUM_OF_SEG = 2  # The number of segment
+NUM_OF_SEG = 3  # The number of segment
 SIGMA = ((0, "1"), (1, "1"), (2, "1"),
          (3, "1"), (4, "1"), (5, "1"),
          (6, "1"), (7, "1"), (8, "1"), (9, "1"))
