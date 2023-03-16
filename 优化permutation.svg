@@ -1,0 +1,415 @@
+<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg version="1.1" width="1200" height="282" onload="init(evt)" viewBox="0 0 1200 282" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:fg="http://github.com/jonhoo/inferno"><!--Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples.--><!--NOTES: --><defs><linearGradient id="background" y1="0" y2="1" x1="0" x2="0"><stop stop-color="#eeeeee" offset="5%"/><stop stop-color="#eeeeb0" offset="95%"/></linearGradient></defs><style type="text/css">
+text { font-family:"Verdana"; font-size:12px; fill:rgb(0,0,0); }
+#title { text-anchor:middle; font-size:17px; }
+#matched { text-anchor:end; }
+#search { text-anchor:end; opacity:0.1; cursor:pointer; }
+#search:hover, #search.show { opacity:1; }
+#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+#unzoom { cursor:pointer; }
+#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+.hide { display:none; }
+.parent { opacity:0.5; }
+</style><script type="text/ecmascript"><![CDATA[
+        var nametype = 'Function:';
+        var fontsize = 12;
+        var fontwidth = 0.59;
+        var xpad = 10;
+        var inverted = true;
+        var searchcolor = 'rgb(230,0,230)';
+        var fluiddrawing = true;
+        var truncate_text_right = false;
+    ]]><![CDATA["use strict";
+var details, searchbtn, unzoombtn, matchedtxt, svg, searching, frames;
+function init(evt) {
+    details = document.getElementById("details").firstChild;
+    searchbtn = document.getElementById("search");
+    unzoombtn = document.getElementById("unzoom");
+    matchedtxt = document.getElementById("matched");
+    svg = document.getElementsByTagName("svg")[0];
+    frames = document.getElementById("frames");
+    total_samples = parseInt(frames.attributes.total_samples.value);
+    searching = 0;
+
+    // Use GET parameters to restore a flamegraph's state.
+    var restore_state = function() {
+        var params = get_params();
+        if (params.x && params.y)
+            zoom(find_group(document.querySelector('[*|x="' + params.x + '"][y="' + params.y + '"]')));
+        if (params.s)
+            search(params.s);
+    };
+
+    if (fluiddrawing) {
+        // Make width dynamic so the SVG fits its parent's width.
+        svg.removeAttribute("width");
+        // Edge requires us to have a viewBox that gets updated with size changes.
+        var isEdge = /Edge\/\d./i.test(navigator.userAgent);
+        var update_for_width_change = function() {
+            if (isEdge) {
+                svg.attributes.viewBox.value = "0 0 " + svg.width.baseVal.value + " " + svg.height.baseVal.value;
+            }
+
+            // Keep consistent padding on left and right of frames container.
+            frames.attributes.width.value = svg.width.baseVal.value - xpad * 2;
+
+            // Text truncation needs to be adjusted for the current width.
+            var el = frames.children;
+            for(var i = 0; i < el.length; i++) {
+                update_text(el[i]);
+            }
+
+            // Keep search elements at a fixed distance from right edge.
+            var svgWidth = svg.width.baseVal.value;
+            searchbtn.attributes.x.value = svgWidth - xpad;
+            matchedtxt.attributes.x.value = svgWidth - xpad;
+        };
+        window.addEventListener('resize', function() {
+            update_for_width_change();
+        });
+        // This needs to be done asynchronously for Safari to work.
+        setTimeout(function() {
+            unzoom();
+            update_for_width_change();
+            restore_state();
+            if (!isEdge) {
+                svg.removeAttribute("viewBox");
+            }
+        }, 0);
+    } else {
+        restore_state();
+    }
+}
+// event listeners
+window.addEventListener("click", function(e) {
+    var target = find_group(e.target);
+    if (target) {
+        if (target.nodeName == "a") {
+            if (e.ctrlKey === false) return;
+            e.preventDefault();
+        }
+        if (target.classList.contains("parent")) unzoom();
+        zoom(target);
+
+        // set parameters for zoom state
+        var el = target.querySelector("rect");
+        if (el && el.attributes && el.attributes.y && el.attributes["fg:x"]) {
+            var params = get_params()
+            params.x = el.attributes["fg:x"].value;
+            params.y = el.attributes.y.value;
+            history.replaceState(null, null, parse_params(params));
+        }
+    }
+    else if (e.target.id == "unzoom") {
+        unzoom();
+
+        // remove zoom state
+        var params = get_params();
+        if (params.x) delete params.x;
+        if (params.y) delete params.y;
+        history.replaceState(null, null, parse_params(params));
+    }
+    else if (e.target.id == "search") search_prompt();
+}, false)
+// mouse-over for info
+// show
+window.addEventListener("mouseover", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = nametype + " " + g_to_text(target);
+}, false)
+// clear
+window.addEventListener("mouseout", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = ' ';
+}, false)
+// ctrl-F for search
+window.addEventListener("keydown",function (e) {
+    if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+        e.preventDefault();
+        search_prompt();
+    }
+}, false)
+// functions
+function get_params() {
+    var params = {};
+    var paramsarr = window.location.search.substr(1).split('&');
+    for (var i = 0; i < paramsarr.length; ++i) {
+        var tmp = paramsarr[i].split("=");
+        if (!tmp[0] || !tmp[1]) continue;
+        params[tmp[0]]  = decodeURIComponent(tmp[1]);
+    }
+    return params;
+}
+function parse_params(params) {
+    var uri = "?";
+    for (var key in params) {
+        uri += key + '=' + encodeURIComponent(params[key]) + '&';
+    }
+    if (uri.slice(-1) == "&")
+        uri = uri.substring(0, uri.length - 1);
+    if (uri == '?')
+        uri = window.location.href.split('?')[0];
+    return uri;
+}
+function find_child(node, selector) {
+    var children = node.querySelectorAll(selector);
+    if (children.length) return children[0];
+    return;
+}
+function find_group(node) {
+    var parent = node.parentElement;
+    if (!parent) return;
+    if (parent.id == "frames") return node;
+    return find_group(parent);
+}
+function orig_save(e, attr, val) {
+    if (e.attributes["fg:orig_" + attr] != undefined) return;
+    if (e.attributes[attr] == undefined) return;
+    if (val == undefined) val = e.attributes[attr].value;
+    e.setAttribute("fg:orig_" + attr, val);
+}
+function orig_load(e, attr) {
+    if (e.attributes["fg:orig_"+attr] == undefined) return;
+    e.attributes[attr].value = e.attributes["fg:orig_" + attr].value;
+    e.removeAttribute("fg:orig_" + attr);
+}
+function g_to_text(e) {
+    var text = find_child(e, "title").firstChild.nodeValue;
+    return (text)
+}
+function g_to_func(e) {
+    var func = g_to_text(e);
+    // if there's any manipulation we want to do to the function
+    // name before it's searched, do it here before returning.
+    return (func);
+}
+function update_text(e) {
+    var r = find_child(e, "rect");
+    var t = find_child(e, "text");
+    var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+    var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+    t.attributes.x.value = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+    // Smaller than this size won't fit anything
+    if (w < 2 * fontsize * fontwidth) {
+        t.textContent = "";
+        return;
+    }
+    t.textContent = txt;
+    // Fit in full text width
+    if (/^ *\$/.test(txt) || t.getComputedTextLength() < w)
+        return;
+    if (truncate_text_right) {
+        // Truncate the right side of the text.
+        for (var x = txt.length - 2; x > 0; x--) {
+            if (t.getSubStringLength(0, x + 2) <= w) {
+                t.textContent = txt.substring(0, x) + "..";
+                return;
+            }
+        }
+    } else {
+        // Truncate the left side of the text.
+        for (var x = 2; x < txt.length; x++) {
+            if (t.getSubStringLength(x - 2, txt.length) <= w) {
+                t.textContent = ".." + txt.substring(x, txt.length);
+                return;
+            }
+        }
+    }
+    t.textContent = "";
+}
+// zoom
+function zoom_reset(e) {
+    if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * parseInt(e.attributes["fg:x"].value) / total_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / total_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_reset(c[i]);
+    }
+}
+function zoom_child(e, x, zoomed_width_samples) {
+    if (e.tagName == "text") {
+        var parent_x = parseFloat(find_child(e.parentNode, "rect[x]").attributes.x.value);
+        e.attributes.x.value = format_percent(parent_x + (100 * 3 / frames.attributes.width.value));
+    } else if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * (parseInt(e.attributes["fg:x"].value) - x) / zoomed_width_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / zoomed_width_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_child(c[i], x, zoomed_width_samples);
+    }
+}
+function zoom_parent(e) {
+    if (e.attributes) {
+        if (e.attributes.x != undefined) {
+            e.attributes.x.value = "0.0%";
+        }
+        if (e.attributes.width != undefined) {
+            e.attributes.width.value = "100.0%";
+        }
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_parent(c[i]);
+    }
+}
+function zoom(node) {
+    var attr = find_child(node, "rect").attributes;
+    var width = parseInt(attr["fg:w"].value);
+    var xmin = parseInt(attr["fg:x"].value);
+    var xmax = xmin + width;
+    var ymin = parseFloat(attr.y.value);
+    unzoombtn.classList.remove("hide");
+    var el = frames.children;
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        var a = find_child(e, "rect").attributes;
+        var ex = parseInt(a["fg:x"].value);
+        var ew = parseInt(a["fg:w"].value);
+        // Is it an ancestor
+        if (!inverted) {
+            var upstack = parseFloat(a.y.value) > ymin;
+        } else {
+            var upstack = parseFloat(a.y.value) < ymin;
+        }
+        if (upstack) {
+            // Direct ancestor
+            if (ex <= xmin && (ex+ew) >= xmax) {
+                e.classList.add("parent");
+                zoom_parent(e);
+                update_text(e);
+            }
+            // not in current path
+            else
+                e.classList.add("hide");
+        }
+        // Children maybe
+        else {
+            // no common path
+            if (ex < xmin || ex >= xmax) {
+                e.classList.add("hide");
+            }
+            else {
+                zoom_child(e, xmin, width);
+                update_text(e);
+            }
+        }
+    }
+}
+function unzoom() {
+    unzoombtn.classList.add("hide");
+    var el = frames.children;
+    for(var i = 0; i < el.length; i++) {
+        el[i].classList.remove("parent");
+        el[i].classList.remove("hide");
+        zoom_reset(el[i]);
+        update_text(el[i]);
+    }
+}
+// search
+function reset_search() {
+    var el = document.querySelectorAll("#frames rect");
+    for (var i = 0; i < el.length; i++) {
+        orig_load(el[i], "fill")
+    }
+    var params = get_params();
+    delete params.s;
+    history.replaceState(null, null, parse_params(params));
+}
+function search_prompt() {
+    if (!searching) {
+        var term = prompt("Enter a search term (regexp " +
+            "allowed, eg: ^ext4_)", "");
+        if (term != null) {
+            search(term)
+        }
+    } else {
+        reset_search();
+        searching = 0;
+        searchbtn.classList.remove("show");
+        searchbtn.firstChild.nodeValue = "Search"
+        matchedtxt.classList.add("hide");
+        matchedtxt.firstChild.nodeValue = ""
+    }
+}
+function search(term) {
+    var re = new RegExp(term);
+    var el = frames.children;
+    var matches = new Object();
+    var maxwidth = 0;
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        // Skip over frames which are either not visible, or below the zoomed-to frame
+        if (e.classList.contains("hide") || e.classList.contains("parent")) {
+            continue;
+        }
+        var func = g_to_func(e);
+        var rect = find_child(e, "rect");
+        if (func == null || rect == null)
+            continue;
+        // Save max width. Only works as we have a root frame
+        var w = parseInt(rect.attributes["fg:w"].value);
+        if (w > maxwidth)
+            maxwidth = w;
+        if (func.match(re)) {
+            // highlight
+            var x = parseInt(rect.attributes["fg:x"].value);
+            orig_save(rect, "fill");
+            rect.attributes.fill.value = searchcolor;
+            // remember matches
+            if (matches[x] == undefined) {
+                matches[x] = w;
+            } else {
+                if (w > matches[x]) {
+                    // overwrite with parent
+                    matches[x] = w;
+                }
+            }
+            searching = 1;
+        }
+    }
+    if (!searching)
+        return;
+    var params = get_params();
+    params.s = term;
+    history.replaceState(null, null, parse_params(params));
+
+    searchbtn.classList.add("show");
+    searchbtn.firstChild.nodeValue = "Reset Search";
+    // calculate percent matched, excluding vertical overlap
+    var count = 0;
+    var lastx = -1;
+    var lastw = 0;
+    var keys = Array();
+    for (k in matches) {
+        if (matches.hasOwnProperty(k))
+            keys.push(k);
+    }
+    // sort the matched frames by their x location
+    // ascending, then width descending
+    keys.sort(function(a, b){
+        return a - b;
+    });
+    // Step through frames saving only the biggest bottom-up frames
+    // thanks to the sort order. This relies on the tree property
+    // where children are always smaller than their parents.
+    for (var k in keys) {
+        var x = parseInt(keys[k]);
+        var w = matches[keys[k]];
+        if (x >= lastx + lastw) {
+            count += w;
+            lastx = x;
+            lastw = w;
+        }
+    }
+    // display matched percent
+    matchedtxt.classList.remove("hide");
+    var pct = 100 * count / maxwidth;
+    if (pct != 100) pct = pct.toFixed(1);
+    matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+}
+function format_percent(n) {
+    return n.toFixed(4) + "%";
+}
+]]></script><rect x="0" y="0" width="100%" height="282" fill="url(#background)"/><text id="title" x="50.0000%" y="24.00">py-spy record --pid 457</text><text id="details" x="10" y="40.00"> </text><text id="unzoom" class="hide" x="10" y="24.00">Reset Zoom</text><text id="search" x="1190" y="24.00">Search</text><text id="matched" x="1190" y="271.00"> </text><svg id="frames" x="10" width="1180" total_samples="12688"><g><title>poll (multiprocessing/connection.py:255) (13 samples, 0.10%)</title><rect x="0.4887%" y="132" width="0.1025%" height="15" fill="rgb(227,0,7)" fg:x="62" fg:w="13"/><text x="0.7387%" y="142.50"></text></g><g><title>__init__ (selectors.py:347) (30 samples, 0.24%)</title><rect x="0.9537%" y="180" width="0.2364%" height="15" fill="rgb(217,0,24)" fg:x="121" fg:w="30"/><text x="1.2037%" y="190.50"></text></g><g><title>__init__ (selectors.py:212) (16 samples, 0.13%)</title><rect x="1.0640%" y="196" width="0.1261%" height="15" fill="rgb(221,193,54)" fg:x="135" fg:w="16"/><text x="1.3140%" y="206.50"></text></g><g><title>wait (multiprocessing/connection.py:903) (65 samples, 0.51%)</title><rect x="0.8433%" y="164" width="0.5123%" height="15" fill="rgb(248,212,6)" fg:x="107" fg:w="65"/><text x="1.0933%" y="174.50"></text></g><g><title>__init__ (selectors.py:348) (21 samples, 0.17%)</title><rect x="1.1901%" y="180" width="0.1655%" height="15" fill="rgb(208,68,35)" fg:x="151" fg:w="21"/><text x="1.4401%" y="190.50"></text></g><g><title>_fileobj_to_fd (selectors.py:36) (15 samples, 0.12%)</title><rect x="1.8758%" y="228" width="0.1182%" height="15" fill="rgb(232,128,0)" fg:x="238" fg:w="15"/><text x="2.1258%" y="238.50"></text></g><g><title>register (selectors.py:237) (60 samples, 0.47%)</title><rect x="1.5526%" y="196" width="0.4729%" height="15" fill="rgb(207,160,47)" fg:x="197" fg:w="60"/><text x="1.8026%" y="206.50"></text></g><g><title>_fileobj_lookup (selectors.py:224) (33 samples, 0.26%)</title><rect x="1.7654%" y="212" width="0.2601%" height="15" fill="rgb(228,23,34)" fg:x="224" fg:w="33"/><text x="2.0154%" y="222.50"></text></g><g><title>register (selectors.py:351) (84 samples, 0.66%)</title><rect x="1.4423%" y="180" width="0.6620%" height="15" fill="rgb(218,30,26)" fg:x="183" fg:w="84"/><text x="1.6923%" y="190.50"></text></g><g><title>get_fileno (gevent/select.py:68) (18 samples, 0.14%)</title><rect x="2.3014%" y="212" width="0.1419%" height="15" fill="rgb(220,122,19)" fg:x="292" fg:w="18"/><text x="2.5514%" y="222.50"></text></g><g><title>wait (multiprocessing/connection.py:905) (140 samples, 1.10%)</title><rect x="1.3635%" y="164" width="1.1034%" height="15" fill="rgb(250,228,42)" fg:x="173" fg:w="140"/><text x="1.6135%" y="174.50"></text></g><g><title>register (selectors.py:357) (39 samples, 0.31%)</title><rect x="2.1595%" y="180" width="0.3074%" height="15" fill="rgb(240,193,28)" fg:x="274" fg:w="39"/><text x="2.4095%" y="190.50"></text></g><g><title>register (gevent/select.py:255) (24 samples, 0.19%)</title><rect x="2.2777%" y="196" width="0.1892%" height="15" fill="rgb(216,20,37)" fg:x="289" fg:w="24"/><text x="2.5277%" y="206.50"></text></g><g><title>poll (gevent/select.py:291) (34 samples, 0.27%)</title><rect x="2.5221%" y="196" width="0.2680%" height="15" fill="rgb(206,188,39)" fg:x="320" fg:w="34"/><text x="2.7721%" y="206.50"></text></g><g><title>__init__ (gevent/select.py:208) (28 samples, 0.22%)</title><rect x="2.5694%" y="212" width="0.2207%" height="15" fill="rgb(217,207,13)" fg:x="326" fg:w="28"/><text x="2.8194%" y="222.50"></text></g><g><title>_get_started_watchers (gevent/select.py:268) (15 samples, 0.12%)</title><rect x="2.9555%" y="212" width="0.1182%" height="15" fill="rgb(231,73,38)" fg:x="375" fg:w="15"/><text x="3.2055%" y="222.50"></text></g><g><title>poll (gevent/select.py:292) (60 samples, 0.47%)</title><rect x="2.7900%" y="196" width="0.4729%" height="15" fill="rgb(225,20,46)" fg:x="354" fg:w="60"/><text x="3.0400%" y="206.50"></text></g><g><title>_get_started_watchers (gevent/select.py:271) (22 samples, 0.17%)</title><rect x="3.0895%" y="212" width="0.1734%" height="15" fill="rgb(210,31,41)" fg:x="392" fg:w="22"/><text x="3.3395%" y="222.50"></text></g><g><title>__exit__ (gevent/timeout.py:358) (31 samples, 0.24%)</title><rect x="3.3575%" y="212" width="0.2443%" height="15" fill="rgb(221,200,47)" fg:x="426" fg:w="31"/><text x="3.6075%" y="222.50"></text></g><g><title>start_new (gevent/timeout.py:261) (65 samples, 0.51%)</title><rect x="3.8462%" y="228" width="0.5123%" height="15" fill="rgb(226,26,5)" fg:x="488" fg:w="65"/><text x="4.0962%" y="238.50"></text></g><g><title>__init__ (gevent/timeout.py:218) (28 samples, 0.22%)</title><rect x="4.1378%" y="244" width="0.2207%" height="15" fill="rgb(249,33,26)" fg:x="525" fg:w="28"/><text x="4.3878%" y="254.50"></text></g><g><title>start (gevent/timeout.py:222) (16 samples, 0.13%)</title><rect x="4.3821%" y="244" width="0.1261%" height="15" fill="rgb(235,183,28)" fg:x="556" fg:w="16"/><text x="4.6321%" y="254.50"></text></g><g><title>start_new (gevent/timeout.py:262) (43 samples, 0.34%)</title><rect x="4.3584%" y="228" width="0.3389%" height="15" fill="rgb(221,5,38)" fg:x="553" fg:w="43"/><text x="4.6084%" y="238.50"></text></g><g><title>start (gevent/timeout.py:238) (23 samples, 0.18%)</title><rect x="4.5161%" y="244" width="0.1813%" height="15" fill="rgb(247,18,42)" fg:x="573" fg:w="23"/><text x="4.7661%" y="254.50"></text></g><g><title>select (selectors.py:376) (277 samples, 2.18%)</title><rect x="2.5221%" y="180" width="2.1832%" height="15" fill="rgb(241,131,45)" fg:x="320" fg:w="277"/><text x="2.7721%" y="190.50">s..</text></g><g><title>poll (gevent/select.py:314) (183 samples, 1.44%)</title><rect x="3.2629%" y="196" width="1.4423%" height="15" fill="rgb(249,31,29)" fg:x="414" fg:w="183"/><text x="3.5129%" y="206.50"></text></g><g><title>_start_new_or_dummy (gevent/timeout.py:284) (135 samples, 1.06%)</title><rect x="3.6412%" y="212" width="1.0640%" height="15" fill="rgb(225,111,53)" fg:x="462" fg:w="135"/><text x="3.8912%" y="222.50"></text></g><g><title>wait (multiprocessing/connection.py:911) (287 samples, 2.26%)</title><rect x="2.4905%" y="164" width="2.2620%" height="15" fill="rgb(238,160,17)" fg:x="316" fg:w="287"/><text x="2.7405%" y="174.50">w..</text></g><g><title>close (selectors.py:269) (15 samples, 0.12%)</title><rect x="4.9180%" y="196" width="0.1182%" height="15" fill="rgb(214,148,48)" fg:x="624" fg:w="15"/><text x="5.1680%" y="206.50"></text></g><g><title>_poll (multiprocessing/connection.py:414) (561 samples, 4.42%)</title><rect x="0.6936%" y="148" width="4.4215%" height="15" fill="rgb(232,36,49)" fg:x="88" fg:w="561"/><text x="0.9436%" y="158.50">_poll..</text></g><g><title>wait (multiprocessing/connection.py:918) (34 samples, 0.27%)</title><rect x="4.8471%" y="164" width="0.2680%" height="15" fill="rgb(209,103,24)" fg:x="615" fg:w="34"/><text x="5.0971%" y="174.50"></text></g><g><title>__exit__ (selectors.py:202) (30 samples, 0.24%)</title><rect x="4.8786%" y="180" width="0.2364%" height="15" fill="rgb(229,88,8)" fg:x="619" fg:w="30"/><text x="5.1286%" y="190.50"></text></g><g><title>get (multiprocessing/queues.py:104) (601 samples, 4.74%)</title><rect x="0.3941%" y="116" width="4.7368%" height="15" fill="rgb(213,181,19)" fg:x="50" fg:w="601"/><text x="0.6441%" y="126.50">get (m..</text></g><g><title>poll (multiprocessing/connection.py:257) (572 samples, 4.51%)</title><rect x="0.6226%" y="132" width="4.5082%" height="15" fill="rgb(254,191,54)" fg:x="79" fg:w="572"/><text x="0.8726%" y="142.50">poll ..</text></g><g><title>_recv (multiprocessing/connection.py:379) (697 samples, 5.49%)</title><rect x="5.5958%" y="164" width="5.4934%" height="15" fill="rgb(241,83,37)" fg:x="710" fg:w="697"/><text x="5.8458%" y="174.50">_recv (..</text></g><g><title>_recv_bytes (multiprocessing/connection.py:407) (729 samples, 5.75%)</title><rect x="5.4461%" y="148" width="5.7456%" height="15" fill="rgb(233,36,39)" fg:x="691" fg:w="729"/><text x="5.6961%" y="158.50">_recv_b..</text></g><g><title>_recv (multiprocessing/connection.py:379) (148 samples, 1.17%)</title><rect x="11.4045%" y="164" width="1.1665%" height="15" fill="rgb(226,3,54)" fg:x="1447" fg:w="148"/><text x="11.6545%" y="174.50"></text></g><g><title>recv_bytes (multiprocessing/connection.py:216) (917 samples, 7.23%)</title><rect x="5.3988%" y="132" width="7.2273%" height="15" fill="rgb(245,192,40)" fg:x="685" fg:w="917"/><text x="5.6488%" y="142.50">recv_bytes..</text></g><g><title>_recv_bytes (multiprocessing/connection.py:411) (170 samples, 1.34%)</title><rect x="11.2863%" y="148" width="1.3398%" height="15" fill="rgb(238,167,29)" fg:x="1432" fg:w="170"/><text x="11.5363%" y="158.50"></text></g><g><title>get (multiprocessing/queues.py:108) (952 samples, 7.50%)</title><rect x="5.1545%" y="116" width="7.5032%" height="15" fill="rgb(232,182,51)" fg:x="654" fg:w="952"/><text x="5.4045%" y="126.50">get (multi..</text></g><g><title>get (multiprocessing/queues.py:113) (227 samples, 1.79%)</title><rect x="12.7759%" y="116" width="1.7891%" height="15" fill="rgb(231,60,39)" fg:x="1621" fg:w="227"/><text x="13.0259%" y="126.50">g..</text></g><g><title>_recv_loop (BDT/dumbobft/core/dumbo.py:158) (1,873 samples, 14.76%)</title><rect x="0.0394%" y="68" width="14.7620%" height="15" fill="rgb(208,69,12)" fg:x="5" fg:w="1873"/><text x="0.2894%" y="78.50">_recv_loop (BDT/dumbobf..</text></g><g><title>&lt;lambda&gt; (BDT/myexperiements/sockettest/dumbo_node.py:51) (1,859 samples, 14.65%)</title><rect x="0.1497%" y="84" width="14.6516%" height="15" fill="rgb(235,93,37)" fg:x="19" fg:w="1859"/><text x="0.3997%" y="94.50">&lt;lambda&gt; (BDT/myexperi..</text></g><g><title>&lt;lambda&gt; (run_socket_node.py:118) (1,848 samples, 14.56%)</title><rect x="0.2364%" y="100" width="14.5649%" height="15" fill="rgb(213,116,39)" fg:x="30" fg:w="1848"/><text x="0.4864%" y="110.50">&lt;lambda&gt; (run_socket_n..</text></g><g><title>get (multiprocessing/queues.py:99) (17 samples, 0.13%)</title><rect x="14.6674%" y="116" width="0.1340%" height="15" fill="rgb(222,207,29)" fg:x="1861" fg:w="17"/><text x="14.9174%" y="126.50"></text></g><g><title>_recv_loop (BDT/dumbobft/core/dumbo.py:165) (31 samples, 0.24%)</title><rect x="14.8408%" y="68" width="0.2443%" height="15" fill="rgb(206,96,30)" fg:x="1883" fg:w="31"/><text x="15.0908%" y="78.50"></text></g><g><title>baisedbinaryagreement (BDT/dumbobft/core/baisedbinaryagreement.py:148) (15 samples, 0.12%)</title><rect x="15.0851%" y="68" width="0.1182%" height="15" fill="rgb(218,138,4)" fg:x="1914" fg:w="15"/><text x="15.3351%" y="78.50"></text></g><g><title>broadcast (BDT/dumbobft/core/baisedbinaryagreement.py:76) (15 samples, 0.12%)</title><rect x="15.0851%" y="84" width="0.1182%" height="15" fill="rgb(250,191,14)" fg:x="1914" fg:w="15"/><text x="15.3351%" y="94.50"></text></g><g><title>aba_send (BDT/dumbobft/core/validatedagreement_.py:381) (15 samples, 0.12%)</title><rect x="15.0851%" y="100" width="0.1182%" height="15" fill="rgb(239,60,40)" fg:x="1914" fg:w="15"/><text x="15.3351%" y="110.50"></text></g><g><title>vaba_send (BDT/dumbobft/core/validatedcommonsubset_.py:105) (15 samples, 0.12%)</title><rect x="15.0851%" y="116" width="0.1182%" height="15" fill="rgb(206,27,48)" fg:x="1914" fg:w="15"/><text x="15.3351%" y="126.50"></text></g><g><title>vacs_send (BDT/dumbobft/core/dumbo.py:354) (15 samples, 0.12%)</title><rect x="15.0851%" y="132" width="0.1182%" height="15" fill="rgb(225,35,8)" fg:x="1914" fg:w="15"/><text x="15.3351%" y="142.50"></text></g><g><title>_send (BDT/dumbobft/core/dumbo.py:207) (15 samples, 0.12%)</title><rect x="15.0851%" y="148" width="0.1182%" height="15" fill="rgb(250,213,24)" fg:x="1914" fg:w="15"/><text x="15.3351%" y="158.50"></text></g><g><title>&lt;lambda&gt; (BDT/myexperiements/sockettest/dumbo_node.py:50) (14 samples, 0.11%)</title><rect x="15.0930%" y="164" width="0.1103%" height="15" fill="rgb(247,123,22)" fg:x="1915" fg:w="14"/><text x="15.3430%" y="174.50"></text></g><g><title>put_nowait (multiprocessing/queues.py:129) (14 samples, 0.11%)</title><rect x="15.0930%" y="180" width="0.1103%" height="15" fill="rgb(231,138,38)" fg:x="1915" fg:w="14"/><text x="15.3430%" y="190.50"></text></g><g><title>put (multiprocessing/queues.py:82) (13 samples, 0.10%)</title><rect x="15.2033%" y="196" width="0.1025%" height="15" fill="rgb(231,145,46)" fg:x="1929" fg:w="13"/><text x="15.4533%" y="206.50"></text></g><g><title>baisedbinaryagreement (BDT/dumbobft/core/baisedbinaryagreement.py:161) (15 samples, 0.12%)</title><rect x="15.2033%" y="68" width="0.1182%" height="15" fill="rgb(251,118,11)" fg:x="1929" fg:w="15"/><text x="15.4533%" y="78.50"></text></g><g><title>broadcast (BDT/dumbobft/core/baisedbinaryagreement.py:76) (15 samples, 0.12%)</title><rect x="15.2033%" y="84" width="0.1182%" height="15" fill="rgb(217,147,25)" fg:x="1929" fg:w="15"/><text x="15.4533%" y="94.50"></text></g><g><title>aba_send (BDT/dumbobft/core/validatedagreement_.py:381) (15 samples, 0.12%)</title><rect x="15.2033%" y="100" width="0.1182%" height="15" fill="rgb(247,81,37)" fg:x="1929" fg:w="15"/><text x="15.4533%" y="110.50"></text></g><g><title>vaba_send (BDT/dumbobft/core/validatedcommonsubset_.py:105) (15 samples, 0.12%)</title><rect x="15.2033%" y="116" width="0.1182%" height="15" fill="rgb(209,12,38)" fg:x="1929" fg:w="15"/><text x="15.4533%" y="126.50"></text></g><g><title>vacs_send (BDT/dumbobft/core/dumbo.py:354) (15 samples, 0.12%)</title><rect x="15.2033%" y="132" width="0.1182%" height="15" fill="rgb(227,1,9)" fg:x="1929" fg:w="15"/><text x="15.4533%" y="142.50"></text></g><g><title>_send (BDT/dumbobft/core/dumbo.py:207) (15 samples, 0.12%)</title><rect x="15.2033%" y="148" width="0.1182%" height="15" fill="rgb(248,47,43)" fg:x="1929" fg:w="15"/><text x="15.4533%" y="158.50"></text></g><g><title>&lt;lambda&gt; (BDT/myexperiements/sockettest/dumbo_node.py:50) (15 samples, 0.12%)</title><rect x="15.2033%" y="164" width="0.1182%" height="15" fill="rgb(221,10,30)" fg:x="1929" fg:w="15"/><text x="15.4533%" y="174.50"></text></g><g><title>put_nowait (multiprocessing/queues.py:129) (15 samples, 0.12%)</title><rect x="15.2033%" y="180" width="0.1182%" height="15" fill="rgb(210,229,1)" fg:x="1929" fg:w="15"/><text x="15.4533%" y="190.50"></text></g><g><title>broadcast_receiver_loop (BDT/dumbobft/core/dumbo.py:50) (68 samples, 0.54%)</title><rect x="15.3767%" y="68" width="0.5359%" height="15" fill="rgb(222,148,37)" fg:x="1951" fg:w="68"/><text x="15.6267%" y="78.50"></text></g><g><title>broadcast_receiver_loop (BDT/dumbobft/core/dumbo.py:51) (40 samples, 0.32%)</title><rect x="15.9127%" y="68" width="0.3153%" height="15" fill="rgb(234,67,33)" fg:x="2019" fg:w="40"/><text x="16.1627%" y="78.50"></text></g><g><title>__members__ (enum.py:345) (18 samples, 0.14%)</title><rect x="16.0861%" y="84" width="0.1419%" height="15" fill="rgb(247,98,35)" fg:x="2041" fg:w="18"/><text x="16.3361%" y="94.50"></text></g><g><title>broadcast_receiver_loop (BDT/dumbobft/core/dumbo.py:56) (43 samples, 0.34%)</title><rect x="16.2279%" y="68" width="0.3389%" height="15" fill="rgb(247,138,52)" fg:x="2059" fg:w="43"/><text x="16.4779%" y="78.50"></text></g><g><title>_asdict (&lt;string&gt;:37) (34 samples, 0.27%)</title><rect x="16.2989%" y="84" width="0.2680%" height="15" fill="rgb(213,79,30)" fg:x="2068" fg:w="34"/><text x="16.5489%" y="94.50"></text></g><g><title>broadcast_receiver_loop (BDT/dumbobft/core/dumbo.py:58) (30 samples, 0.24%)</title><rect x="16.5668%" y="68" width="0.2364%" height="15" fill="rgb(246,177,23)" fg:x="2102" fg:w="30"/><text x="16.8168%" y="78.50"></text></g><g><title>broadcast_receiver_loop (BDT/dumbobft/core/dumbo.py:61) (39 samples, 0.31%)</title><rect x="16.8269%" y="68" width="0.3074%" height="15" fill="rgb(230,62,27)" fg:x="2135" fg:w="39"/><text x="17.0769%" y="78.50"></text></g><g><title>consistentbroadcast (BDT/dumbobft/core/consistentbroadcast.py:102) (15 samples, 0.12%)</title><rect x="17.1343%" y="68" width="0.1182%" height="15" fill="rgb(216,154,8)" fg:x="2174" fg:w="15"/><text x="17.3843%" y="78.50"></text></g><g><title>ecdsa_vrfy (BDT/crypto/ecdsa/ecdsa.py:19) (15 samples, 0.12%)</title><rect x="17.1343%" y="84" width="0.1182%" height="15" fill="rgb(244,35,45)" fg:x="2174" fg:w="15"/><text x="17.3843%" y="94.50"></text></g><g><title>consistentbroadcast (BDT/dumbobft/core/consistentbroadcast.py:124) (25 samples, 0.20%)</title><rect x="17.3156%" y="68" width="0.1970%" height="15" fill="rgb(251,115,12)" fg:x="2197" fg:w="25"/><text x="17.5656%" y="78.50"></text></g><g><title>hash (BDT/dumbobft/core/consistentbroadcast.py:12) (25 samples, 0.20%)</title><rect x="17.3156%" y="84" width="0.1970%" height="15" fill="rgb(240,54,50)" fg:x="2197" fg:w="25"/><text x="17.5656%" y="94.50"></text></g><g><title>verify_signature (coincurve/utils.py:111) (16 samples, 0.13%)</title><rect x="17.8988%" y="100" width="0.1261%" height="15" fill="rgb(233,84,52)" fg:x="2271" fg:w="16"/><text x="18.1488%" y="110.50"></text></g><g><title>verify_signature (coincurve/utils.py:127) (271 samples, 2.14%)</title><rect x="18.1274%" y="100" width="2.1359%" height="15" fill="rgb(207,117,47)" fg:x="2300" fg:w="271"/><text x="18.3774%" y="110.50">v..</text></g><g><title>consistentbroadcast (BDT/dumbobft/core/consistentbroadcast.py:126) (345 samples, 2.72%)</title><rect x="17.5520%" y="68" width="2.7191%" height="15" fill="rgb(249,43,39)" fg:x="2227" fg:w="345"/><text x="17.8020%" y="78.50">co..</text></g><g><title>ecdsa_vrfy (BDT/crypto/ecdsa/ecdsa.py:19) (343 samples, 2.70%)</title><rect x="17.5678%" y="84" width="2.7033%" height="15" fill="rgb(209,38,44)" fg:x="2229" fg:w="343"/><text x="17.8178%" y="94.50">ec..</text></g><g><title>consistentbroadcast (BDT/dumbobft/core/consistentbroadcast.py:90) (20 samples, 0.16%)</title><rect x="20.3342%" y="68" width="0.1576%" height="15" fill="rgb(236,212,23)" fg:x="2580" fg:w="20"/><text x="20.5842%" y="78.50"></text></g><g><title>hash (BDT/dumbobft/core/consistentbroadcast.py:12) (19 samples, 0.15%)</title><rect x="20.3421%" y="84" width="0.1497%" height="15" fill="rgb(242,79,21)" fg:x="2581" fg:w="19"/><text x="20.5921%" y="94.50"></text></g><g><title>cbc_send (BDT/dumbobft/core/validatedagreement_.py:143) (32 samples, 0.25%)</title><rect x="20.4918%" y="84" width="0.2522%" height="15" fill="rgb(211,96,35)" fg:x="2600" fg:w="32"/><text x="20.7418%" y="94.50"></text></g><g><title>vaba_send (BDT/dumbobft/core/validatedcommonsubset_.py:105) (32 samples, 0.25%)</title><rect x="20.4918%" y="100" width="0.2522%" height="15" fill="rgb(253,215,40)" fg:x="2600" fg:w="32"/><text x="20.7418%" y="110.50"></text></g><g><title>vacs_send (BDT/dumbobft/core/dumbo.py:354) (31 samples, 0.24%)</title><rect x="20.4997%" y="116" width="0.2443%" height="15" fill="rgb(211,81,21)" fg:x="2601" fg:w="31"/><text x="20.7497%" y="126.50"></text></g><g><title>_send (BDT/dumbobft/core/dumbo.py:207) (30 samples, 0.24%)</title><rect x="20.5076%" y="132" width="0.2364%" height="15" fill="rgb(208,190,38)" fg:x="2602" fg:w="30"/><text x="20.7576%" y="142.50"></text></g><g><title>&lt;lambda&gt; (BDT/myexperiements/sockettest/dumbo_node.py:50) (30 samples, 0.24%)</title><rect x="20.5076%" y="148" width="0.2364%" height="15" fill="rgb(235,213,38)" fg:x="2602" fg:w="30"/><text x="20.7576%" y="158.50"></text></g><g><title>put_nowait (multiprocessing/queues.py:129) (30 samples, 0.24%)</title><rect x="20.5076%" y="164" width="0.2364%" height="15" fill="rgb(237,122,38)" fg:x="2602" fg:w="30"/><text x="20.7576%" y="174.50"></text></g><g><title>put (multiprocessing/queues.py:89) (29 samples, 0.23%)</title><rect x="20.5154%" y="180" width="0.2286%" height="15" fill="rgb(244,218,35)" fg:x="2603" fg:w="29"/><text x="20.7654%" y="190.50"></text></g><g><title>notify (threading.py:351) (29 samples, 0.23%)</title><rect x="20.5154%" y="196" width="0.2286%" height="15" fill="rgb(240,68,47)" fg:x="2603" fg:w="29"/><text x="20.7654%" y="206.50"></text></g><g><title>commit_send (BDT/dumbobft/core/validatedagreement_.py:166) (13 samples, 0.10%)</title><rect x="20.7440%" y="84" width="0.1025%" height="15" fill="rgb(210,16,53)" fg:x="2632" fg:w="13"/><text x="20.9940%" y="94.50"></text></g><g><title>vaba_send (BDT/dumbobft/core/validatedcommonsubset_.py:105) (13 samples, 0.10%)</title><rect x="20.7440%" y="100" width="0.1025%" height="15" fill="rgb(235,124,12)" fg:x="2632" fg:w="13"/><text x="20.9940%" y="110.50"></text></g><g><title>vacs_send (BDT/dumbobft/core/dumbo.py:354) (13 samples, 0.10%)</title><rect x="20.7440%" y="116" width="0.1025%" height="15" fill="rgb(224,169,11)" fg:x="2632" fg:w="13"/><text x="20.9940%" y="126.50"></text></g><g><title>_send (BDT/dumbobft/core/dumbo.py:207) (13 samples, 0.10%)</title><rect x="20.7440%" y="132" width="0.1025%" height="15" fill="rgb(250,166,2)" fg:x="2632" fg:w="13"/><text x="20.9940%" y="142.50"></text></g><g><title>&lt;lambda&gt; (BDT/myexperiements/sockettest/dumbo_node.py:50) (13 samples, 0.10%)</title><rect x="20.7440%" y="148" width="0.1025%" height="15" fill="rgb(242,216,29)" fg:x="2632" fg:w="13"/><text x="20.9940%" y="158.50"></text></g><g><title>put_nowait (multiprocessing/queues.py:129) (13 samples, 0.10%)</title><rect x="20.7440%" y="164" width="0.1025%" height="15" fill="rgb(230,116,27)" fg:x="2632" fg:w="13"/><text x="20.9940%" y="174.50"></text></g><g><title>sign (coincurve/keys.py:55) (14 samples, 0.11%)</title><rect x="20.8544%" y="100" width="0.1103%" height="15" fill="rgb(228,99,48)" fg:x="2646" fg:w="14"/><text x="21.1044%" y="110.50"></text></g><g><title>consistentbroadcast (BDT/dumbobft/core/consistentbroadcast.py:92) (61 samples, 0.48%)</title><rect x="20.4918%" y="68" width="0.4808%" height="15" fill="rgb(253,11,6)" fg:x="2600" fg:w="61"/><text x="20.7418%" y="78.50"></text></g><g><title>ecdsa_sign (BDT/crypto/ecdsa/ecdsa.py:15) (16 samples, 0.13%)</title><rect x="20.8465%" y="84" width="0.1261%" height="15" fill="rgb(247,143,39)" fg:x="2645" fg:w="16"/><text x="21.0965%" y="94.50"></text></g><g><title>prbc_validate (BDT/dumbobft/core/validators.py:11) (55 samples, 0.43%)</title><rect x="21.1696%" y="100" width="0.4335%" height="15" fill="rgb(236,97,10)" fg:x="2686" fg:w="55"/><text x="21.4196%" y="110.50"></text></g><g><title>prbc_validate (BDT/dumbobft/core/validators.py:12) (22 samples, 0.17%)</title><rect x="21.6031%" y="100" width="0.1734%" height="15" fill="rgb(233,208,19)" fg:x="2741" fg:w="22"/><text x="21.8531%" y="110.50"></text></g><g><title>hash (BDT/dumbobft/core/validators.py:5) (20 samples, 0.16%)</title><rect x="21.6189%" y="116" width="0.1576%" height="15" fill="rgb(216,164,2)" fg:x="2743" fg:w="20"/><text x="21.8689%" y="126.50"></text></g><g><title>prbc_validate (BDT/dumbobft/core/validators.py:13) (25 samples, 0.20%)</title><rect x="21.7765%" y="100" width="0.1970%" height="15" fill="rgb(220,129,5)" fg:x="2763" fg:w="25"/><text x="22.0265%" y="110.50"></text></g><g><title>format (coincurve/keys.py:379) (63 samples, 0.50%)</title><rect x="22.8720%" y="132" width="0.4965%" height="15" fill="rgb(242,17,10)" fg:x="2902" fg:w="63"/><text x="23.1220%" y="142.50"></text></g><g><title>format (coincurve/keys.py:380) (44 samples, 0.35%)</title><rect x="23.3685%" y="132" width="0.3468%" height="15" fill="rgb(242,107,0)" fg:x="2965" fg:w="44"/><text x="23.6185%" y="142.50"></text></g><g><title>format (coincurve/keys.py:383) (77 samples, 0.61%)</title><rect x="23.7547%" y="132" width="0.6069%" height="15" fill="rgb(251,28,31)" fg:x="3014" fg:w="77"/><text x="24.0047%" y="142.50"></text></g><g><title>format (coincurve/keys.py:386) (52 samples, 0.41%)</title><rect x="24.3616%" y="132" width="0.4098%" height="15" fill="rgb(233,223,10)" fg:x="3091" fg:w="52"/><text x="24.6116%" y="142.50"></text></g><g><title>hash (BDT/crypto/ecdsa/ecdsa.py:11) (105 samples, 0.83%)</title><rect x="24.8266%" y="132" width="0.8276%" height="15" fill="rgb(215,21,27)" fg:x="3150" fg:w="105"/><text x="25.0766%" y="142.50"></text></g><g><title>hash (BDT/crypto/ecdsa/ecdsa.py:6) (39 samples, 0.31%)</title><rect x="25.6778%" y="132" width="0.3074%" height="15" fill="rgb(232,23,21)" fg:x="3258" fg:w="39"/><text x="25.9278%" y="142.50"></text></g><g><title>hash (BDT/crypto/ecdsa/ecdsa.py:8) (48 samples, 0.38%)</title><rect x="25.9852%" y="132" width="0.3783%" height="15" fill="rgb(244,5,23)" fg:x="3297" fg:w="48"/><text x="26.2352%" y="142.50"></text></g><g><title>verify_signature (coincurve/utils.py:109) (25 samples, 0.20%)</title><rect x="26.4108%" y="132" width="0.1970%" height="15" fill="rgb(226,81,46)" fg:x="3351" fg:w="25"/><text x="26.6608%" y="142.50"></text></g><g><title>verify_signature (coincurve/utils.py:111) (492 samples, 3.88%)</title><rect x="26.6078%" y="132" width="3.8777%" height="15" fill="rgb(247,70,30)" fg:x="3376" fg:w="492"/><text x="26.8578%" y="142.50">veri..</text></g><g><title>verify_signature (coincurve/utils.py:116) (65 samples, 0.51%)</title><rect x="30.5013%" y="132" width="0.5123%" height="15" fill="rgb(212,68,19)" fg:x="3870" fg:w="65"/><text x="30.7513%" y="142.50"></text></g><g><title>sha256 (coincurve/utils.py:26) (55 samples, 0.43%)</title><rect x="30.5801%" y="148" width="0.4335%" height="15" fill="rgb(240,187,13)" fg:x="3880" fg:w="55"/><text x="30.8301%" y="158.50"></text></g><g><title>verify_signature (coincurve/utils.py:120) (16 samples, 0.13%)</title><rect x="31.0845%" y="132" width="0.1261%" height="15" fill="rgb(223,113,26)" fg:x="3944" fg:w="16"/><text x="31.3345%" y="142.50"></text></g><g><title>verify_signature (coincurve/utils.py:122) (47 samples, 0.37%)</title><rect x="31.2106%" y="132" width="0.3704%" height="15" fill="rgb(206,192,2)" fg:x="3960" fg:w="47"/><text x="31.4606%" y="142.50"></text></g><g><title>verify_signature (coincurve/utils.py:127) (3,615 samples, 28.49%)</title><rect x="31.5810%" y="132" width="28.4915%" height="15" fill="rgb(241,108,4)" fg:x="4007" fg:w="3615"/><text x="31.8310%" y="142.50">verify_signature (coincurve/utils.py:127)</text></g><g><title>vacs_predicate (BDT/dumbobft/core/dumbo.py:388) (4,953 samples, 39.04%)</title><rect x="21.0593%" y="84" width="39.0369%" height="15" fill="rgb(247,173,49)" fg:x="2672" fg:w="4953"/><text x="21.3093%" y="94.50">vacs_predicate (BDT/dumbobft/core/dumbo.py:388)</text></g><g><title>prbc_validate (BDT/dumbobft/core/validators.py:14) (4,837 samples, 38.12%)</title><rect x="21.9735%" y="100" width="38.1226%" height="15" fill="rgb(224,114,35)" fg:x="2788" fg:w="4837"/><text x="22.2235%" y="110.50">prbc_validate (BDT/dumbobft/core/validators.py:14)</text></g><g><title>ecdsa_vrfy (BDT/crypto/ecdsa/ecdsa.py:19) (4,805 samples, 37.87%)</title><rect x="22.2257%" y="116" width="37.8704%" height="15" fill="rgb(245,159,27)" fg:x="2820" fg:w="4805"/><text x="22.4757%" y="126.50">ecdsa_vrfy (BDT/crypto/ecdsa/ecdsa.py:19)</text></g><g><title>predicate_pt (BDT/dumbobft/core/validatedcommonsubset_.py:142) (4,971 samples, 39.18%)</title><rect x="20.9883%" y="68" width="39.1788%" height="15" fill="rgb(245,172,44)" fg:x="2663" fg:w="4971"/><text x="21.2383%" y="78.50">predicate_pt (BDT/dumbobft/core/validatedcommonsubset_.py:142)</text></g><g><title>provablereliablebroadcast (BDT/dumbobft/core/provablereliablebroadcast.py:124) (60 samples, 0.47%)</title><rect x="60.1828%" y="68" width="0.4729%" height="15" fill="rgb(236,23,11)" fg:x="7636" fg:w="60"/><text x="60.4328%" y="78.50"></text></g><g><title>provablereliablebroadcast (BDT/dumbobft/core/provablereliablebroadcast.py:138) (51 samples, 0.40%)</title><rect x="60.7188%" y="68" width="0.4020%" height="15" fill="rgb(205,117,38)" fg:x="7704" fg:w="51"/><text x="60.9688%" y="78.50"></text></g><g><title>broadcast (BDT/dumbobft/core/provablereliablebroadcast.py:81) (50 samples, 0.39%)</title><rect x="60.7267%" y="84" width="0.3941%" height="15" fill="rgb(237,72,25)" fg:x="7705" fg:w="50"/><text x="60.9767%" y="94.50"></text></g><g><title>prbc_send (BDT/dumbobft/core/dumbo.py:304) (50 samples, 0.39%)</title><rect x="60.7267%" y="100" width="0.3941%" height="15" fill="rgb(244,70,9)" fg:x="7705" fg:w="50"/><text x="60.9767%" y="110.50"></text></g><g><title>_send (BDT/dumbobft/core/dumbo.py:207) (50 samples, 0.39%)</title><rect x="60.7267%" y="116" width="0.3941%" height="15" fill="rgb(217,125,39)" fg:x="7705" fg:w="50"/><text x="60.9767%" y="126.50"></text></g><g><title>&lt;lambda&gt; (BDT/myexperiements/sockettest/dumbo_node.py:50) (50 samples, 0.39%)</title><rect x="60.7267%" y="132" width="0.3941%" height="15" fill="rgb(235,36,10)" fg:x="7705" fg:w="50"/><text x="60.9767%" y="142.50"></text></g><g><title>put_nowait (multiprocessing/queues.py:129) (50 samples, 0.39%)</title><rect x="60.7267%" y="148" width="0.3941%" height="15" fill="rgb(251,123,47)" fg:x="7705" fg:w="50"/><text x="60.9767%" y="158.50"></text></g><g><title>put (multiprocessing/queues.py:89) (50 samples, 0.39%)</title><rect x="60.7267%" y="164" width="0.3941%" height="15" fill="rgb(221,13,13)" fg:x="7705" fg:w="50"/><text x="60.9767%" y="174.50"></text></g><g><title>notify (threading.py:351) (49 samples, 0.39%)</title><rect x="60.7346%" y="180" width="0.3862%" height="15" fill="rgb(238,131,9)" fg:x="7706" fg:w="49"/><text x="60.9846%" y="190.50"></text></g><g><title>merkleVerify (BDT/honeybadgerbft/core/reliablebroadcast.py:121) (14 samples, 0.11%)</title><rect x="61.3572%" y="84" width="0.1103%" height="15" fill="rgb(211,50,8)" fg:x="7785" fg:w="14"/><text x="61.6072%" y="94.50"></text></g><g><title>merkleVerify (BDT/honeybadgerbft/core/reliablebroadcast.py:123) (48 samples, 0.38%)</title><rect x="61.4675%" y="84" width="0.3783%" height="15" fill="rgb(245,182,24)" fg:x="7799" fg:w="48"/><text x="61.7175%" y="94.50"></text></g><g><title>hash (BDT/honeybadgerbft/core/reliablebroadcast.py:78) (41 samples, 0.32%)</title><rect x="61.5227%" y="100" width="0.3231%" height="15" fill="rgb(242,14,37)" fg:x="7806" fg:w="41"/><text x="61.7727%" y="110.50"></text></g><g><title>merkleVerify (BDT/honeybadgerbft/core/reliablebroadcast.py:126) (33 samples, 0.26%)</title><rect x="61.8458%" y="84" width="0.2601%" height="15" fill="rgb(246,228,12)" fg:x="7847" fg:w="33"/><text x="62.0958%" y="94.50"></text></g><g><title>provablereliablebroadcast (BDT/dumbobft/core/provablereliablebroadcast.py:148) (106 samples, 0.84%)</title><rect x="61.2863%" y="68" width="0.8354%" height="15" fill="rgb(213,55,15)" fg:x="7776" fg:w="106"/><text x="61.5363%" y="78.50"></text></g><g><title>notify (threading.py:351) (62 samples, 0.49%)</title><rect x="62.3266%" y="164" width="0.4887%" height="15" fill="rgb(209,9,3)" fg:x="7908" fg:w="62"/><text x="62.5766%" y="174.50"></text></g><g><title>provablereliablebroadcast (BDT/dumbobft/core/provablereliablebroadcast.py:162) (68 samples, 0.54%)</title><rect x="62.2951%" y="68" width="0.5359%" height="15" fill="rgb(230,59,30)" fg:x="7904" fg:w="68"/><text x="62.5451%" y="78.50"></text></g><g><title>prbc_send (BDT/dumbobft/core/dumbo.py:304) (68 samples, 0.54%)</title><rect x="62.2951%" y="84" width="0.5359%" height="15" fill="rgb(209,121,21)" fg:x="7904" fg:w="68"/><text x="62.5451%" y="94.50"></text></g><g><title>_send (BDT/dumbobft/core/dumbo.py:207) (68 samples, 0.54%)</title><rect x="62.2951%" y="100" width="0.5359%" height="15" fill="rgb(220,109,13)" fg:x="7904" fg:w="68"/><text x="62.5451%" y="110.50"></text></g><g><title>&lt;lambda&gt; (BDT/myexperiements/sockettest/dumbo_node.py:50) (68 samples, 0.54%)</title><rect x="62.2951%" y="116" width="0.5359%" height="15" fill="rgb(232,18,1)" fg:x="7904" fg:w="68"/><text x="62.5451%" y="126.50"></text></g><g><title>put_nowait (multiprocessing/queues.py:129) (68 samples, 0.54%)</title><rect x="62.2951%" y="132" width="0.5359%" height="15" fill="rgb(215,41,42)" fg:x="7904" fg:w="68"/><text x="62.5451%" y="142.50"></text></g><g><title>put (multiprocessing/queues.py:89) (67 samples, 0.53%)</title><rect x="62.3030%" y="148" width="0.5281%" height="15" fill="rgb(224,123,36)" fg:x="7905" fg:w="67"/><text x="62.5530%" y="158.50"></text></g><g><title>provablereliablebroadcast (BDT/dumbobft/core/provablereliablebroadcast.py:174) (34 samples, 0.27%)</title><rect x="62.8862%" y="68" width="0.2680%" height="15" fill="rgb(240,125,3)" fg:x="7979" fg:w="34"/><text x="63.1362%" y="78.50"></text></g><g><title>hash (BDT/dumbobft/core/provablereliablebroadcast.py:12) (31 samples, 0.24%)</title><rect x="62.9098%" y="84" width="0.2443%" height="15" fill="rgb(205,98,50)" fg:x="7982" fg:w="31"/><text x="63.1598%" y="94.50"></text></g><g><title>format (coincurve/keys.py:379) (16 samples, 0.13%)</title><rect x="63.3039%" y="100" width="0.1261%" height="15" fill="rgb(205,185,37)" fg:x="8032" fg:w="16"/><text x="63.5539%" y="110.50"></text></g><g><title>format (coincurve/keys.py:383) (15 samples, 0.12%)</title><rect x="63.5167%" y="100" width="0.1182%" height="15" fill="rgb(238,207,15)" fg:x="8059" fg:w="15"/><text x="63.7667%" y="110.50"></text></g><g><title>verify_signature (coincurve/utils.py:111) (20 samples, 0.16%)</title><rect x="63.8320%" y="100" width="0.1576%" height="15" fill="rgb(213,199,42)" fg:x="8099" fg:w="20"/><text x="64.0820%" y="110.50"></text></g><g><title>verify_signature (coincurve/utils.py:127) (135 samples, 1.06%)</title><rect x="64.1866%" y="100" width="1.0640%" height="15" fill="rgb(235,201,11)" fg:x="8144" fg:w="135"/><text x="64.4366%" y="110.50"></text></g><g><title>provablereliablebroadcast (BDT/dumbobft/core/provablereliablebroadcast.py:175) (268 samples, 2.11%)</title><rect x="63.1542%" y="68" width="2.1122%" height="15" fill="rgb(207,46,11)" fg:x="8013" fg:w="268"/><text x="63.4042%" y="78.50">p..</text></g><g><title>ecdsa_vrfy (BDT/crypto/ecdsa/ecdsa.py:19) (265 samples, 2.09%)</title><rect x="63.1778%" y="84" width="2.0886%" height="15" fill="rgb(241,35,35)" fg:x="8016" fg:w="265"/><text x="63.4278%" y="94.50">e..</text></g><g><title>decode_output (BDT/dumbobft/core/provablereliablebroadcast.py:115) (14 samples, 0.11%)</title><rect x="65.4083%" y="84" width="0.1103%" height="15" fill="rgb(243,32,47)" fg:x="8299" fg:w="14"/><text x="65.6583%" y="94.50"></text></g><g><title>provablereliablebroadcast (BDT/dumbobft/core/provablereliablebroadcast.py:195) (41 samples, 0.32%)</title><rect x="65.3531%" y="68" width="0.3231%" height="15" fill="rgb(247,202,23)" fg:x="8292" fg:w="41"/><text x="65.6031%" y="78.50"></text></g><g><title>decode_output (BDT/dumbobft/core/provablereliablebroadcast.py:116) (20 samples, 0.16%)</title><rect x="65.5186%" y="84" width="0.1576%" height="15" fill="rgb(219,102,11)" fg:x="8313" fg:w="20"/><text x="65.7686%" y="94.50"></text></g><g><title>deserialize (charm/toolbox/pairinggroup.py:129) (61 samples, 0.48%)</title><rect x="65.9915%" y="180" width="0.4808%" height="15" fill="rgb(243,110,44)" fg:x="8373" fg:w="61"/><text x="66.2415%" y="190.50"></text></g><g><title>honeybadger_block (BDT/honeybadgerbft/core/honeybadger_block.py:103) (68 samples, 0.54%)</title><rect x="65.9836%" y="116" width="0.5359%" height="15" fill="rgb(222,74,54)" fg:x="8372" fg:w="68"/><text x="66.2336%" y="126.50"></text></g><g><title>&lt;listcomp&gt; (BDT/honeybadgerbft/core/honeybadger_block.py:103) (68 samples, 0.54%)</title><rect x="65.9836%" y="132" width="0.5359%" height="15" fill="rgb(216,99,12)" fg:x="8372" fg:w="68"/><text x="66.2336%" y="142.50"></text></g><g><title>tpke_deserialize (BDT/honeybadgerbft/core/honeybadger_block.py:21) (68 samples, 0.54%)</title><rect x="65.9836%" y="148" width="0.5359%" height="15" fill="rgb(226,22,26)" fg:x="8372" fg:w="68"/><text x="66.2336%" y="158.50"></text></g><g><title>deserialize1 (BDT/crypto/threshenc/tpke.py:44) (67 samples, 0.53%)</title><rect x="65.9915%" y="164" width="0.5281%" height="15" fill="rgb(217,163,10)" fg:x="8373" fg:w="67"/><text x="66.2415%" y="174.50"></text></g><g><title>honeybadger_block (BDT/honeybadgerbft/core/honeybadger_block.py:122) (13 samples, 0.10%)</title><rect x="66.5274%" y="116" width="0.1025%" height="15" fill="rgb(213,25,53)" fg:x="8441" fg:w="13"/><text x="66.7774%" y="126.50"></text></g><g><title>combine_shares (BDT/crypto/threshenc/tpke.py:163) (1,466 samples, 11.55%)</title><rect x="66.6299%" y="132" width="11.5542%" height="15" fill="rgb(252,105,26)" fg:x="8454" fg:w="1466"/><text x="66.8799%" y="142.50">combine_shares (B..</text></g><g><title>verify_share (BDT/crypto/threshenc/tpke.py:149) (1,461 samples, 11.51%)</title><rect x="66.6693%" y="148" width="11.5148%" height="15" fill="rgb(220,39,43)" fg:x="8459" fg:w="1461"/><text x="66.9193%" y="158.50">verify_share (BDT..</text></g><g><title>lagrange (BDT/crypto/threshenc/tpke.py:116) (19 samples, 0.15%)</title><rect x="86.8695%" y="164" width="0.1497%" height="15" fill="rgb(229,68,48)" fg:x="11022" fg:w="19"/><text x="87.1195%" y="174.50"></text></g><g><title>combine_shares (BDT/crypto/threshenc/tpke.py:167) (1,128 samples, 8.89%)</title><rect x="78.1841%" y="132" width="8.8903%" height="15" fill="rgb(252,8,32)" fg:x="9920" fg:w="1128"/><text x="78.4341%" y="142.50">combine_share..</text></g><g><title>&lt;listcomp&gt; (BDT/crypto/threshenc/tpke.py:167) (1,113 samples, 8.77%)</title><rect x="78.3023%" y="148" width="8.7721%" height="15" fill="rgb(223,20,43)" fg:x="9935" fg:w="1113"/><text x="78.5523%" y="158.50">&lt;listcomp&gt; (..</text></g><g><title>honeybadger_block (BDT/honeybadgerbft/core/honeybadger_block.py:123) (2,598 samples, 20.48%)</title><rect x="66.6299%" y="116" width="20.4760%" height="15" fill="rgb(229,81,49)" fg:x="8454" fg:w="2598"/><text x="66.8799%" y="126.50">honeybadger_block (BDT/honeybadg..</text></g><g><title>honeybadger_block (BDT/honeybadgerbft/core/honeybadger_block.py:68) (18 samples, 0.14%)</title><rect x="87.1847%" y="116" width="0.1419%" height="15" fill="rgb(236,28,36)" fg:x="11062" fg:w="18"/><text x="87.4347%" y="126.50"></text></g><g><title>encrypt (BDT/crypto/threshenc/tpke.py:133) (16 samples, 0.13%)</title><rect x="87.2005%" y="132" width="0.1261%" height="15" fill="rgb(249,185,26)" fg:x="11064" fg:w="16"/><text x="87.4505%" y="142.50"></text></g><g><title>deserialize_UVW (BDT/honeybadgerbft/core/honeybadger_block.py:42) (15 samples, 0.12%)</title><rect x="87.3818%" y="132" width="0.1182%" height="15" fill="rgb(249,174,33)" fg:x="11087" fg:w="15"/><text x="87.6318%" y="142.50"></text></g><g><title>deserialize1 (BDT/crypto/threshenc/tpke.py:44) (15 samples, 0.12%)</title><rect x="87.3818%" y="148" width="0.1182%" height="15" fill="rgb(233,201,37)" fg:x="11087" fg:w="15"/><text x="87.6318%" y="158.50"></text></g><g><title>honeybadger_block (BDT/honeybadgerbft/core/honeybadger_block.py:91) (20 samples, 0.16%)</title><rect x="87.3739%" y="116" width="0.1576%" height="15" fill="rgb(221,78,26)" fg:x="11086" fg:w="20"/><text x="87.6239%" y="126.50"></text></g><g><title>hash (charm/toolbox/pairinggroup.py:98) (218 samples, 1.72%)</title><rect x="87.5315%" y="180" width="1.7182%" height="15" fill="rgb(250,127,30)" fg:x="11106" fg:w="218"/><text x="87.7815%" y="190.50"></text></g><g><title>verify_ciphertext (BDT/crypto/threshenc/tpke.py:141) (220 samples, 1.73%)</title><rect x="87.5315%" y="148" width="1.7339%" height="15" fill="rgb(230,49,44)" fg:x="11106" fg:w="220"/><text x="87.7815%" y="158.50"></text></g><g><title>hashH (BDT/crypto/threshenc/tpke.py:80) (220 samples, 1.73%)</title><rect x="87.5315%" y="164" width="1.7339%" height="15" fill="rgb(229,67,23)" fg:x="11106" fg:w="220"/><text x="87.7815%" y="174.50"></text></g><g><title>decrypt_share (BDT/crypto/threshenc/tpke.py:199) (358 samples, 2.82%)</title><rect x="87.5315%" y="132" width="2.8216%" height="15" fill="rgb(249,83,47)" fg:x="11106" fg:w="358"/><text x="87.7815%" y="142.50">de..</text></g><g><title>verify_ciphertext (BDT/crypto/threshenc/tpke.py:142) (138 samples, 1.09%)</title><rect x="89.2654%" y="148" width="1.0876%" height="15" fill="rgb(215,43,3)" fg:x="11326" fg:w="138"/><text x="89.5154%" y="158.50"></text></g><g><title>honeybadger_block (BDT/honeybadgerbft/core/honeybadger_block.py:92) (437 samples, 3.44%)</title><rect x="87.5315%" y="116" width="3.4442%" height="15" fill="rgb(238,154,13)" fg:x="11106" fg:w="437"/><text x="87.7815%" y="126.50">hon..</text></g><g><title>decrypt_share (BDT/crypto/threshenc/tpke.py:204) (79 samples, 0.62%)</title><rect x="90.3531%" y="132" width="0.6226%" height="15" fill="rgb(219,56,2)" fg:x="11464" fg:w="79"/><text x="90.6031%" y="142.50"></text></g><g><title>_run_round (BDT/dumbobft/core/dumbo.py:443) (3,174 samples, 25.02%)</title><rect x="65.9678%" y="100" width="25.0158%" height="15" fill="rgb(233,0,4)" fg:x="8370" fg:w="3174"/><text x="66.2178%" y="110.50">_run_round (BDT/dumbobft/core/dumbo.py:4..</text></g><g><title>run_bft (BDT/dumbobft/core/dumbo.py:212) (3,189 samples, 25.13%)</title><rect x="65.8890%" y="84" width="25.1340%" height="15" fill="rgb(235,30,7)" fg:x="8360" fg:w="3189"/><text x="66.1390%" y="94.50">run_bft (BDT/dumbobft/core/dumbo.py:212)</text></g><g><title>run (BDT/myexperiements/sockettest/dumbo_node.py:86) (3,194 samples, 25.17%)</title><rect x="65.8890%" y="68" width="25.1734%" height="15" fill="rgb(250,79,13)" fg:x="8360" fg:w="3194"/><text x="66.1390%" y="78.50">run (BDT/myexperiements/sockettest/dumbo..</text></g><g><title>_on_expiration (gevent/timeout.py:242) (30 samples, 0.24%)</title><rect x="95.0662%" y="84" width="0.2364%" height="15" fill="rgb(211,146,34)" fg:x="12062" fg:w="30"/><text x="95.3162%" y="94.50"></text></g><g><title>run (gevent/hub.py:647) (589 samples, 4.64%)</title><rect x="91.0624%" y="68" width="4.6422%" height="15" fill="rgb(228,22,38)" fg:x="11554" fg:w="589"/><text x="91.3124%" y="78.50">run (..</text></g><g><title>add_event (gevent/select.py:221) (29 samples, 0.23%)</title><rect x="95.4760%" y="84" width="0.2286%" height="15" fill="rgb(235,168,5)" fg:x="12114" fg:w="29"/><text x="95.7260%" y="94.50"></text></g><g><title>verify_signature (coincurve/utils.py:111) (13 samples, 0.10%)</title><rect x="96.0199%" y="116" width="0.1025%" height="15" fill="rgb(221,155,16)" fg:x="12183" fg:w="13"/><text x="96.2699%" y="126.50"></text></g><g><title>vacs_predicate (BDT/dumbobft/core/dumbo.py:388) (160 samples, 1.26%)</title><rect x="95.7519%" y="68" width="1.2610%" height="15" fill="rgb(215,215,53)" fg:x="12149" fg:w="160"/><text x="96.0019%" y="78.50"></text></g><g><title>prbc_validate (BDT/dumbobft/core/validators.py:14) (153 samples, 1.21%)</title><rect x="95.8071%" y="84" width="1.2059%" height="15" fill="rgb(223,4,10)" fg:x="12156" fg:w="153"/><text x="96.0571%" y="94.50"></text></g><g><title>ecdsa_vrfy (BDT/crypto/ecdsa/ecdsa.py:19) (151 samples, 1.19%)</title><rect x="95.8228%" y="100" width="1.1901%" height="15" fill="rgb(234,103,6)" fg:x="12158" fg:w="151"/><text x="96.0728%" y="110.50"></text></g><g><title>verify_signature (coincurve/utils.py:127) (110 samples, 0.87%)</title><rect x="96.1460%" y="116" width="0.8670%" height="15" fill="rgb(227,97,0)" fg:x="12199" fg:w="110"/><text x="96.3960%" y="126.50"></text></g><g><title>validatedagreement (BDT/dumbobft/core/validatedagreement_.py:337) (195 samples, 1.54%)</title><rect x="97.1311%" y="68" width="1.5369%" height="15" fill="rgb(234,150,53)" fg:x="12324" fg:w="195"/><text x="97.3811%" y="78.50"></text></g><g><title>cbc_validate (BDT/dumbobft/core/validators.py:25) (186 samples, 1.47%)</title><rect x="97.2021%" y="84" width="1.4660%" height="15" fill="rgb(228,201,54)" fg:x="12333" fg:w="186"/><text x="97.4521%" y="94.50"></text></g><g><title>ecdsa_vrfy (BDT/crypto/ecdsa/ecdsa.py:19) (184 samples, 1.45%)</title><rect x="97.2178%" y="100" width="1.4502%" height="15" fill="rgb(222,22,37)" fg:x="12335" fg:w="184"/><text x="97.4678%" y="110.50"></text></g><g><title>verify_signature (coincurve/utils.py:127) (145 samples, 1.14%)</title><rect x="97.5252%" y="116" width="1.1428%" height="15" fill="rgb(237,53,32)" fg:x="12374" fg:w="145"/><text x="97.7752%" y="126.50"></text></g><g><title>vaba_predicate (BDT/dumbobft/core/validatedcommonsubset_.py:149) (31 samples, 0.24%)</title><rect x="98.8966%" y="84" width="0.2443%" height="15" fill="rgb(233,25,53)" fg:x="12548" fg:w="31"/><text x="99.1466%" y="94.50"></text></g><g><title>wait_for_cbc_to_continue (BDT/dumbobft/core/validatedagreement_.py:219) (129 samples, 1.02%)</title><rect x="98.8808%" y="68" width="1.0167%" height="15" fill="rgb(210,40,34)" fg:x="12546" fg:w="129"/><text x="99.1308%" y="78.50"></text></g><g><title>vaba_predicate (BDT/dumbobft/core/validatedcommonsubset_.py:161) (86 samples, 0.68%)</title><rect x="99.2197%" y="84" width="0.6778%" height="15" fill="rgb(241,220,44)" fg:x="12589" fg:w="86"/><text x="99.4697%" y="94.50"></text></g><g><title>all (12,688 samples, 100%)</title><rect x="0.0000%" y="52" width="100.0000%" height="15" fill="rgb(235,28,35)" fg:x="0" fg:w="12688"/><text x="0.2500%" y="62.50"></text></g></svg></svg>
