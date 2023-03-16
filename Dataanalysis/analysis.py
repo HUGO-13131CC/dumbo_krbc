@@ -12,14 +12,10 @@ if __name__ == '__main__':
               '1% least throughout(TXs/s)',
               '1% largest throughout(TXs/s)']
     data_set = []
-    RBC_instances = 4     # the number of nodes emerged in the consensus
-    batch_size = [25000, 25000, 25000, 25000, 25000,
-                  50000, 50000, 50000, 50000, 50000,
-                  100000, 100000, 100000, 100000, 100000,
-                  250000, 250000, 250000, 250000, 250000,
-                  500000, 500000, 500000, 500000, 500000, ]  # the number of corrupted nodes
+    RBC_instances = 1     # the number of nodes emerged in the consensus
+    batch_size = [50000, 100000, 250000, 500000, 1000000]  # the number of corrupted nodes
     idx = 0
-    num_round = 20
+    num_round = 100
     # batch_size = 5000
     with open('../log/consensus-node-0.log') as f:
         print('loading data...')
@@ -62,7 +58,7 @@ if __name__ == '__main__':
                 idx += 1
 
     print(data_set)
-    with open(f'data_k_{RBC_instances}.csv', 'a', newline='', encoding='utf-8') as out:
+    with open(f'data_k_{RBC_instances}_.csv', 'a', newline='', encoding='utf-8') as out:
         writer = csv.DictWriter(out, fieldnames=header)
         writer.writeheader()
         writer.writerows(data_set)
