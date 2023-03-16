@@ -1,0 +1,16 @@
+2023-03-16 04:12:21,418 socket_client.py [line:240] run INFO node id 26 is running on pid 4165167 
+2023-03-16 04:12:21,418 socket_client.py [line:53] _connect_and_send_forever INFO node 26's socket client starts to make outgoing connections on process id 4165167 
+2023-03-16 04:23:25,622 socket_client.py [line:240] run INFO node id 26 is running on pid 2867615 
+2023-03-16 04:23:25,623 socket_client.py [line:53] _connect_and_send_forever INFO node 26's socket client starts to make outgoing connections on process id 2867615 
+2023-03-16 05:22:30,088 socket_client.py [line:240] run INFO node id 26 is running on pid 602155 
+2023-03-16 05:22:30,089 socket_client.py [line:53] _connect_and_send_forever INFO node 26's socket client starts to make outgoing connections on process id 602155 
+2023-03-16 05:31:10,110 socket_client.py [line:240] run INFO node id 26 is running on pid 2227423 
+2023-03-16 05:31:10,111 socket_client.py [line:53] _connect_and_send_forever INFO node 26's socket client starts to make outgoing connections on process id 2227423 
+2023-03-16 05:54:23,252 socket_client.py [line:240] run INFO node id 26 is running on pid 644548 
+2023-03-16 05:54:23,252 socket_client.py [line:53] _connect_and_send_forever INFO node 26's socket client starts to make outgoing connections on process id 644548 
+2023-03-16 06:28:53,545 socket_client.py [line:240] run INFO node id 26 is running on pid 2709636 
+2023-03-16 06:28:53,545 socket_client.py [line:53] _connect_and_send_forever INFO node 26's socket client starts to make outgoing connections on process id 2709636 
+2023-03-16 07:10:42,260 socket_client.py [line:240] run INFO node id 26 is running on pid 731346 
+2023-03-16 07:10:42,261 socket_client.py [line:53] _connect_and_send_forever INFO node 26's socket client starts to make outgoing connections on process id 731346 
+2023-03-16 07:24:59,142 socket_client.py [line:240] run INFO node id 26 is running on pid 1931909 
+2023-03-16 07:24:59,142 socket_client.py [line:53] _connect_and_send_forever INFO node 26's socket client starts to make outgoing connections on process id 1931909 

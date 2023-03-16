@@ -1,0 +1,16 @@
+2023-03-16 04:12:21,342 socket_client.py [line:240] run INFO node id 14 is running on pid 4164305 
+2023-03-16 04:12:21,343 socket_client.py [line:53] _connect_and_send_forever INFO node 14's socket client starts to make outgoing connections on process id 4164305 
+2023-03-16 04:23:25,799 socket_client.py [line:240] run INFO node id 14 is running on pid 2869392 
+2023-03-16 04:23:25,799 socket_client.py [line:53] _connect_and_send_forever INFO node 14's socket client starts to make outgoing connections on process id 2869392 
+2023-03-16 05:22:30,070 socket_client.py [line:240] run INFO node id 14 is running on pid 601974 
+2023-03-16 05:22:30,071 socket_client.py [line:53] _connect_and_send_forever INFO node 14's socket client starts to make outgoing connections on process id 601974 
+2023-03-16 05:31:10,144 socket_client.py [line:240] run INFO node id 14 is running on pid 2227815 
+2023-03-16 05:31:10,145 socket_client.py [line:53] _connect_and_send_forever INFO node 14's socket client starts to make outgoing connections on process id 2227815 
+2023-03-16 05:54:23,099 socket_client.py [line:240] run INFO node id 14 is running on pid 642900 
+2023-03-16 05:54:23,100 socket_client.py [line:53] _connect_and_send_forever INFO node 14's socket client starts to make outgoing connections on process id 642900 
+2023-03-16 06:28:53,533 socket_client.py [line:240] run INFO node id 14 is running on pid 2709514 
+2023-03-16 06:28:53,534 socket_client.py [line:53] _connect_and_send_forever INFO node 14's socket client starts to make outgoing connections on process id 2709514 
+2023-03-16 07:10:42,374 socket_client.py [line:240] run INFO node id 14 is running on pid 732592 
+2023-03-16 07:10:42,375 socket_client.py [line:53] _connect_and_send_forever INFO node 14's socket client starts to make outgoing connections on process id 732592 
+2023-03-16 07:24:59,105 socket_client.py [line:240] run INFO node id 14 is running on pid 1931503 
+2023-03-16 07:24:59,106 socket_client.py [line:53] _connect_and_send_forever INFO node 14's socket client starts to make outgoing connections on process id 1931503 

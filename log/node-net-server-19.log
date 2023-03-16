@@ -1,0 +1,16 @@
+2023-03-16 04:12:21,355 socket_server.py [line:68] run INFO node id 19 is running on pid 4164438 
+2023-03-16 04:12:21,355 socket_server.py [line:34] _listen_and_recv_forever INFO node 19's socket server starts to listen ingoing connections on process id 4164438 
+2023-03-16 04:23:25,587 socket_server.py [line:68] run INFO node id 19 is running on pid 2867225 
+2023-03-16 04:23:25,587 socket_server.py [line:34] _listen_and_recv_forever INFO node 19's socket server starts to listen ingoing connections on process id 2867225 
+2023-03-16 05:22:30,441 socket_server.py [line:68] run INFO node id 19 is running on pid 605797 
+2023-03-16 05:22:30,442 socket_server.py [line:34] _listen_and_recv_forever INFO node 19's socket server starts to listen ingoing connections on process id 605797 
+2023-03-16 05:31:09,990 socket_server.py [line:68] run INFO node id 19 is running on pid 2226110 
+2023-03-16 05:31:09,991 socket_server.py [line:34] _listen_and_recv_forever INFO node 19's socket server starts to listen ingoing connections on process id 2226110 
+2023-03-16 05:54:23,221 socket_server.py [line:68] run INFO node id 19 is running on pid 644256 
+2023-03-16 05:54:23,221 socket_server.py [line:34] _listen_and_recv_forever INFO node 19's socket server starts to listen ingoing connections on process id 644256 
+2023-03-16 06:28:53,510 socket_server.py [line:68] run INFO node id 19 is running on pid 2709268 
+2023-03-16 06:28:53,511 socket_server.py [line:34] _listen_and_recv_forever INFO node 19's socket server starts to listen ingoing connections on process id 2709268 
+2023-03-16 07:10:42,399 socket_server.py [line:68] run INFO node id 19 is running on pid 732807 
+2023-03-16 07:10:42,400 socket_server.py [line:34] _listen_and_recv_forever INFO node 19's socket server starts to listen ingoing connections on process id 732807 
+2023-03-16 07:24:58,999 socket_server.py [line:68] run INFO node id 19 is running on pid 1930420 
+2023-03-16 07:24:59,000 socket_server.py [line:34] _listen_and_recv_forever INFO node 19's socket server starts to listen ingoing connections on process id 1930420 

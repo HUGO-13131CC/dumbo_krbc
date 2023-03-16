@@ -1,0 +1,16 @@
+2023-03-16 04:12:21,553 socket_server.py [line:68] run INFO node id 12 is running on pid 4166666 
+2023-03-16 04:12:21,553 socket_server.py [line:34] _listen_and_recv_forever INFO node 12's socket server starts to listen ingoing connections on process id 4166666 
+2023-03-16 04:23:25,606 socket_server.py [line:68] run INFO node id 12 is running on pid 2867446 
+2023-03-16 04:23:25,606 socket_server.py [line:34] _listen_and_recv_forever INFO node 12's socket server starts to listen ingoing connections on process id 2867446 
+2023-03-16 05:22:29,989 socket_server.py [line:68] run INFO node id 12 is running on pid 601197 
+2023-03-16 05:22:29,990 socket_server.py [line:34] _listen_and_recv_forever INFO node 12's socket server starts to listen ingoing connections on process id 601197 
+2023-03-16 05:31:10,169 socket_server.py [line:68] run INFO node id 12 is running on pid 2228046 
+2023-03-16 05:31:10,169 socket_server.py [line:34] _listen_and_recv_forever INFO node 12's socket server starts to listen ingoing connections on process id 2228046 
+2023-03-16 05:54:23,232 socket_server.py [line:68] run INFO node id 12 is running on pid 644387 
+2023-03-16 05:54:23,232 socket_server.py [line:34] _listen_and_recv_forever INFO node 12's socket server starts to listen ingoing connections on process id 644387 
+2023-03-16 06:28:53,556 socket_server.py [line:68] run INFO node id 12 is running on pid 2709744 
+2023-03-16 06:28:53,557 socket_server.py [line:34] _listen_and_recv_forever INFO node 12's socket server starts to listen ingoing connections on process id 2709744 
+2023-03-16 07:10:42,354 socket_server.py [line:68] run INFO node id 12 is running on pid 732344 
+2023-03-16 07:10:42,354 socket_server.py [line:34] _listen_and_recv_forever INFO node 12's socket server starts to listen ingoing connections on process id 732344 
+2023-03-16 07:24:59,003 socket_server.py [line:68] run INFO node id 12 is running on pid 1930462 
+2023-03-16 07:24:59,003 socket_server.py [line:34] _listen_and_recv_forever INFO node 12's socket server starts to listen ingoing connections on process id 1930462 

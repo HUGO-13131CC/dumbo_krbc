@@ -1,0 +1,16 @@
+2023-03-16 04:12:21,457 socket_server.py [line:68] run INFO node id 3 is running on pid 4165577 
+2023-03-16 04:12:21,458 socket_server.py [line:34] _listen_and_recv_forever INFO node 3's socket server starts to listen ingoing connections on process id 4165577 
+2023-03-16 04:23:25,616 socket_server.py [line:68] run INFO node id 3 is running on pid 2867554 
+2023-03-16 04:23:25,617 socket_server.py [line:34] _listen_and_recv_forever INFO node 3's socket server starts to listen ingoing connections on process id 2867554 
+2023-03-16 05:22:30,066 socket_server.py [line:68] run INFO node id 3 is running on pid 601915 
+2023-03-16 05:22:30,067 socket_server.py [line:34] _listen_and_recv_forever INFO node 3's socket server starts to listen ingoing connections on process id 601915 
+2023-03-16 05:31:10,162 socket_server.py [line:68] run INFO node id 3 is running on pid 2228011 
+2023-03-16 05:31:10,162 socket_server.py [line:34] _listen_and_recv_forever INFO node 3's socket server starts to listen ingoing connections on process id 2228011 
+2023-03-16 05:54:23,308 socket_server.py [line:68] run INFO node id 3 is running on pid 645111 
+2023-03-16 05:54:23,308 socket_server.py [line:34] _listen_and_recv_forever INFO node 3's socket server starts to listen ingoing connections on process id 645111 
+2023-03-16 06:28:53,541 socket_server.py [line:68] run INFO node id 3 is running on pid 2709590 
+2023-03-16 06:28:53,541 socket_server.py [line:34] _listen_and_recv_forever INFO node 3's socket server starts to listen ingoing connections on process id 2709590 
+2023-03-16 07:10:42,491 socket_server.py [line:68] run INFO node id 3 is running on pid 733760 
+2023-03-16 07:10:42,491 socket_server.py [line:34] _listen_and_recv_forever INFO node 3's socket server starts to listen ingoing connections on process id 733760 
+2023-03-16 07:24:59,113 socket_server.py [line:68] run INFO node id 3 is running on pid 1931585 
+2023-03-16 07:24:59,113 socket_server.py [line:34] _listen_and_recv_forever INFO node 3's socket server starts to listen ingoing connections on process id 1931585 

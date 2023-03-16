@@ -1,0 +1,16 @@
+2023-03-16 04:12:21,524 socket_client.py [line:240] run INFO node id 5 is running on pid 4166383 
+2023-03-16 04:12:21,524 socket_client.py [line:53] _connect_and_send_forever INFO node 5's socket client starts to make outgoing connections on process id 4166383 
+2023-03-16 04:23:25,773 socket_client.py [line:240] run INFO node id 5 is running on pid 2869125 
+2023-03-16 04:23:25,774 socket_client.py [line:53] _connect_and_send_forever INFO node 5's socket client starts to make outgoing connections on process id 2869125 
+2023-03-16 05:22:30,300 socket_client.py [line:240] run INFO node id 5 is running on pid 604381 
+2023-03-16 05:22:30,300 socket_client.py [line:53] _connect_and_send_forever INFO node 5's socket client starts to make outgoing connections on process id 604381 
+2023-03-16 05:31:10,079 socket_client.py [line:240] run INFO node id 5 is running on pid 2227094 
+2023-03-16 05:31:10,080 socket_client.py [line:53] _connect_and_send_forever INFO node 5's socket client starts to make outgoing connections on process id 2227094 
+2023-03-16 05:54:23,283 socket_client.py [line:240] run INFO node id 5 is running on pid 644834 
+2023-03-16 05:54:23,283 socket_client.py [line:53] _connect_and_send_forever INFO node 5's socket client starts to make outgoing connections on process id 644834 
+2023-03-16 06:28:53,644 socket_client.py [line:240] run INFO node id 5 is running on pid 2710686 
+2023-03-16 06:28:53,645 socket_client.py [line:53] _connect_and_send_forever INFO node 5's socket client starts to make outgoing connections on process id 2710686 
+2023-03-16 07:10:42,476 socket_client.py [line:240] run INFO node id 5 is running on pid 733623 
+2023-03-16 07:10:42,477 socket_client.py [line:53] _connect_and_send_forever INFO node 5's socket client starts to make outgoing connections on process id 733623 
+2023-03-16 07:24:59,042 socket_client.py [line:240] run INFO node id 5 is running on pid 1930866 
+2023-03-16 07:24:59,043 socket_client.py [line:53] _connect_and_send_forever INFO node 5's socket client starts to make outgoing connections on process id 1930866 
