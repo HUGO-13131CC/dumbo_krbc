@@ -13,7 +13,7 @@ if __name__ == '__main__':
               '1% largest throughout(TXs/s)']
     data_set = []
     RBC_instances = 1     # the number of nodes emerged in the consensus
-    batch_size = [50000, 100000, 250000, 500000]  # the number of corrupted nodes
+    batch_size = 1  # the number of corrupted nodes
     idx = 0
     num_round = 100
     # batch_size = 5000
@@ -43,7 +43,7 @@ if __name__ == '__main__':
                       f'1% largest throughout: {sum(round_throughout[length-6:])/6} TXs/sec')
                 data_set.append({
                     '# RBC instances': RBC_instances,
-                    'batch size': batch_size[idx],
+                    'batch size': batch_size,
                     'total transactions(TXs)': float(words[16]),
                     'total delay(s)': float(words[10]),
                     'average delay(s/round)': float(words[10])/num_round,
@@ -58,7 +58,7 @@ if __name__ == '__main__':
                 idx += 1
 
     print(data_set)
-    with open(f'data_k_{RBC_instances}_.csv', 'a', newline='', encoding='utf-8') as out:
+    with open(f'data_k_{RBC_instances}__.csv', 'a', newline='', encoding='utf-8') as out:
         writer = csv.DictWriter(out, fieldnames=header)
         writer.writeheader()
         writer.writerows(data_set)
